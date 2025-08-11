@@ -3,6 +3,14 @@ import json
 import os
 from datetime import datetime, timedelta
 import pandas as pd
+import pytz
+
+# 設定台灣時區
+TW_TZ = pytz.timezone('Asia/Taipei')
+
+def get_taiwan_time():
+    """獲取台灣時間"""
+    return datetime.now(TW_TZ)
 
 # 頁面配置
 st.set_page_config(
@@ -187,8 +195,11 @@ class BossTracker:
         
         try:
             last_killed = datetime.fromisoformat(boss_data['last_killed'])
+            # 如果last_killed沒有時區資訊，假設它是台灣時間
+            if last_killed.tzinfo is None:
+                last_killed = TW_TZ.localize(last_killed)
             respawn_time = last_killed + timedelta(minutes=boss_data['respawn_minutes'])
-            current_time = datetime.now()
+            current_time = get_taiwan_time()
             
             last_killed_str = last_killed.strftime('%m/%d %H:%M:%S')
             respawn_time_str = respawn_time.strftime('%m/%d %H:%M:%S')
@@ -254,7 +265,7 @@ class BossTracker:
             for fmt in formats:
                 try:
                     if fmt.startswith("%m/") or fmt.startswith("%m-"):
-                        current_year = datetime.now().year
+                        current_year = get_taiwan_time().year
                         if "/" in time_str:
                             full_time_str = f"{current_year}/{time_str}"
                             parsed = datetime.strptime(full_time_str, fmt.replace("%m/", "%Y/%m/"))
@@ -287,7 +298,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 當前時間顯示
-current_time = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
+current_time = get_taiwan_time().strftime('%Y/%m/%d %H:%M:%S')
 st.markdown(f"<div style='text-align: center; margin: 1rem 0; font-size: 1.1rem;'>⏰ 現在時間: {current_time}</div>", unsafe_allow_html=True)
 
 # 獲取BOSS數據
@@ -359,7 +370,7 @@ if selected_rows.selection.rows:
     
     with col2:
         if st.button("⚡ 更新為現在時間", use_container_width=True, type="primary", key="quick_update"):
-            tracker.bosses[selected_boss_name]['last_killed'] = datetime.now().isoformat()
+            tracker.bosses[selected_boss_name]['last_killed'] = get_taiwan_time().isoformat()
             if tracker.save_boss_data():
                 st.success(f"✅ 已更新 {selected_boss_name} 擊殺時間")
                 st.rerun()
@@ -433,9 +444,9 @@ with col2:
     
     if st.button("🕐 記錄現在時間", use_container_width=True, type="primary"):
         if selected_boss:
-            tracker.bosses[selected_boss]['last_killed'] = datetime.now().isoformat()
+            tracker.bosses[selected_boss]['last_killed'] = get_taiwan_time().isoformat()
             if tracker.save_boss_data():
-                st.success(f"✅ 已記錄 {selected_boss} 擊殺於 {datetime.now().strftime('%H:%M:%S')}")
+                st.success(f"✅ 已記錄 {selected_boss} 擊殺於 {get_taiwan_time().strftime('%H:%M:%S')}")
                 st.rerun()
     
     if st.button("🗑️ 清除此BOSS記錄", use_container_width=True):
@@ -460,7 +471,7 @@ with col1:
 
 with col2:
     if st.button("📅 填入現在", use_container_width=True):
-        current_time_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        current_time_str = get_taiwan_time().strftime("%Y/%m/%d %H:%M:%S")
         st.session_state["time_input"] = current_time_str
         st.rerun()
 
@@ -526,7 +537,7 @@ with col3:
     st.download_button(
         "💾 下載備份",
         backup_data,
-        file_name=f"boss_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+        file_name=f"boss_backup_{get_taiwan_time().strftime('%Y%m%d_%H%M%S')}.json",
         mime="application/json",
         use_container_width=True
     )
