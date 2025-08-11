@@ -3,7 +3,6 @@ import json
 import os
 from datetime import datetime, timedelta
 import pandas as pd
-import time
 
 # 頁面配置
 st.set_page_config(
@@ -13,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS 樣式 (手機版適配)
+# CSS 樣式 (手機版適配 + 修正顏色問題)
 st.markdown("""
 <style>
     .main-header {
@@ -30,32 +29,26 @@ st.markdown("""
         overflow: hidden;
     }
     
-    .status-ready {
-        background-color: #d5f4e6 !important;
-        font-weight: bold;
-    }
-    
-    .status-waiting {
-        background-color: #fff3cd !important;
-    }
-    
-    .mobile-input {
-        margin: 0.5rem 0;
-    }
-    
-    .quick-buttons {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin: 1rem 0;
-    }
-    
     .boss-info-card {
         background-color: #f8f9fa;
         padding: 1rem;
         border-radius: 8px;
         border-left: 4px solid #3498db;
         margin: 1rem 0;
+    }
+    
+    .click-hint {
+        text-align: center;
+        background-color: #e3f2fd;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        border: 1px solid #bbdefb;
+    }
+    
+    /* 修正表格顏色對比問題 */
+    div[data-testid="stDataFrame"] div[data-testid="stDataFrame"] > div {
+        background-color: white;
     }
     
     /* 手機版適配 */
@@ -69,12 +62,12 @@ st.markdown("""
             margin: 0.2rem 0;
         }
         
-        .quick-buttons {
-            flex-direction: column;
-        }
-        
         div[data-testid="stDataFrame"] {
             font-size: 0.8rem;
+        }
+        
+        .stSelectbox > div > div {
+            font-size: 0.9rem;
         }
     }
     
@@ -82,6 +75,16 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* 表格行點擊效果 */
+    .clickable-row {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    
+    .clickable-row:hover {
+        background-color: #f5f5f5 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -180,7 +183,7 @@ class BossTracker:
     def calculate_respawn_info(self, boss_name, boss_data):
         """計算重生資訊"""
         if boss_data['last_killed'] is None:
-            return "未擊殺", "等待擊殺", "⚪", "normal"
+            return "未擊殺", "等待擊殺", "⚪ 未記錄", "normal"
         
         try:
             last_killed = datetime.fromisoformat(boss_data['last_killed'])
@@ -203,7 +206,7 @@ class BossTracker:
                 return last_killed_str, respawn_time_str, status, "waiting"
                 
         except Exception as e:
-            return "錯誤", "錯誤", "❌", "error"
+            return "錯誤", "錯誤", "❌ 錯誤", "error"
     
     def get_boss_dataframe(self):
         """獲取BOSS數據框"""
@@ -287,64 +290,77 @@ st.markdown("""
 current_time = datetime.now().strftime('%Y/%m/%d %H:%M:%S')
 st.markdown(f"<div style='text-align: center; margin: 1rem 0; font-size: 1.1rem;'>⏰ 現在時間: {current_time}</div>", unsafe_allow_html=True)
 
-# 自動刷新 (每30秒)
-placeholder = st.empty()
-with placeholder.container():
-    # 獲取BOSS數據
-    df = tracker.get_boss_dataframe()
-    
-    # 統計信息
-    total_bosses = len(df)
-    ready_bosses = len(df[df['狀態'].str.contains('✅')])
-    waiting_bosses = len(df[df['狀態'].str.contains('⏳')])
-    
-    # 響應式佈局
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-    
-    with col1:
-        st.metric("總BOSS數", total_bosses, "")
-    
-    with col2:
-        st.metric("已重生", ready_bosses, "")
-    
-    with col3:
-        st.metric("等待中", waiting_bosses, "")
-    
-    with col4:
-        st.metric("未記錄", total_bosses - ready_bosses - waiting_bosses, "")
-    
-    # BOSS表格顯示
-    st.markdown("### 📊 BOSS狀態一覽")
-    
-    # 為不同狀態設定樣式
-    def highlight_status(row):
-        if '✅' in str(row['狀態']):
-            return ['background-color: #d5f4e6'] * len(row)
-        elif '⏳' in str(row['狀態']):
-            return ['background-color: #fff3cd'] * len(row)
-        else:
-            return [''] * len(row)
-    
-    # 顯示表格 (移除內部狀態列)
-    display_df = df.drop('_status_type', axis=1)
-    styled_df = display_df.style.apply(highlight_status, axis=1)
-    st.dataframe(styled_df, use_container_width=True, height=400)
+# 獲取BOSS數據
+df = tracker.get_boss_dataframe()
+
+# 統計信息
+total_bosses = len(df)
+ready_bosses = len(df[df['狀態'].str.contains('✅')])
+waiting_bosses = len(df[df['狀態'].str.contains('⏳')])
+
+# 響應式佈局
+col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+with col1:
+    st.metric("總BOSS數", total_bosses)
+
+with col2:
+    st.metric("已重生", ready_bosses)
+
+with col3:
+    st.metric("等待中", waiting_bosses)
+
+with col4:
+    st.metric("未記錄", total_bosses - ready_bosses - waiting_bosses)
+
+# BOSS表格顯示
+st.markdown("### 📊 BOSS狀態一覽")
+
+# 使用原生顏色樣式，不額外設定避免衝突
+display_df = df.drop('_status_type', axis=1)
+
+# 使用 Streamlit 的原生表格顯示，避免樣式衝突
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    height=400,
+    column_config={
+        "編號": st.column_config.TextColumn("編號", width="small"),
+        "BOSS名稱": st.column_config.TextColumn("BOSS名稱", width="medium"), 
+        "重生時間": st.column_config.TextColumn("重生時間", width="small"),
+        "上次擊殺": st.column_config.TextColumn("上次擊殺", width="medium"),
+        "下次重生": st.column_config.TextColumn("下次重生", width="medium"),
+        "狀態": st.column_config.TextColumn("狀態", width="medium")
+    }
+)
+
+# 點擊提示
+st.markdown("""
+<div class="click-hint">
+    💡 <strong>操作說明</strong>：請使用下方選擇器選擇BOSS，然後點擊按鈕更新擊殺時間
+</div>
+""", unsafe_allow_html=True)
 
 # 分隔線
 st.markdown("---")
 
 # 手動更新區域
-st.markdown("### 📝 手動更新BOSS擊殺時間")
+st.markdown("### 📝 更新BOSS擊殺時間")
 
-# 響應式佈局 - 手機版友好
+# 響應式佈局
 col1, col2 = st.columns([2, 1])
 
 with col1:
     # BOSS選擇
     boss_names = list(tracker.bosses.keys())
+    
+    # 根據重生時間排序BOSS名稱顯示
+    sorted_boss_items = sorted(tracker.bosses.items(), key=lambda x: x[1]['respawn_minutes'])
+    sorted_boss_names = [name for name, _ in sorted_boss_items]
+    
     selected_boss = st.selectbox(
-        "選擇BOSS",
-        boss_names,
+        "🎯 選擇要更新的BOSS",
+        sorted_boss_names,
         index=0,
         key="boss_selector"
     )
@@ -374,9 +390,9 @@ with col1:
 
 with col2:
     # 快速操作按鈕
-    st.markdown("#### 快速操作")
+    st.markdown("#### ⚡ 快速操作")
     
-    if st.button("⚡ 記錄現在時間", use_container_width=True, type="primary"):
+    if st.button("🕐 記錄現在時間", use_container_width=True, type="primary"):
         if selected_boss:
             tracker.bosses[selected_boss]['last_killed'] = datetime.now().isoformat()
             if tracker.save_boss_data():
@@ -391,7 +407,7 @@ with col2:
                 st.rerun()
 
 # 手動輸入時間
-st.markdown("#### ⏰ 手動輸入時間")
+st.markdown("#### ⏰ 手動輸入擊殺時間")
 
 col1, col2, col3 = st.columns([3, 1, 1])
 
@@ -399,26 +415,25 @@ with col1:
     time_input = st.text_input(
         "擊殺時間",
         placeholder="格式: 2025/08/11 16:30 或 08/11 16:30",
-        help="支援多種格式：YYYY/MM/DD HH:MM 或 MM/DD HH:MM"
+        help="支援多種格式：YYYY/MM/DD HH:MM 或 MM/DD HH:MM",
+        key="time_input"
     )
 
 with col2:
-    if st.button("現在", use_container_width=True):
+    if st.button("📅 填入現在", use_container_width=True):
         current_time_str = datetime.now().strftime("%Y/%m/%d %H:%M")
-        st.session_state.manual_time = current_time_str
+        st.session_state.time_input = current_time_str
+        st.rerun()
 
 with col3:
-    if st.button("清空", use_container_width=True):
-        st.session_state.manual_time = ""
-
-# 如果有設定時間，顯示在輸入框中
-if 'manual_time' in st.session_state:
-    time_input = st.session_state.manual_time
+    if st.button("🧹 清空", use_container_width=True):
+        st.session_state.time_input = ""
+        st.rerun()
 
 # 更新按鈕
 if st.button("🎯 更新擊殺時間", use_container_width=True, type="secondary"):
     if not selected_boss:
-        st.error("請選擇一個BOSS")
+        st.error("⚠️ 請選擇一個BOSS")
     elif not time_input.strip():
         # 清除記錄
         tracker.bosses[selected_boss]['last_killed'] = None
@@ -433,14 +448,16 @@ if st.button("🎯 更新擊殺時間", use_container_width=True, type="secondar
         else:
             tracker.bosses[selected_boss]['last_killed'] = parsed_time.isoformat()
             if tracker.save_boss_data():
-                st.success(f"✅ 已更新 {selected_boss} 的擊殺時間")
+                st.success(f"✅ 已更新 {selected_boss} 的擊殺時間為 {parsed_time.strftime('%Y/%m/%d %H:%M')}")
+                # 清空輸入框
+                st.session_state.time_input = ""
                 st.rerun()
 
 # 分隔線
 st.markdown("---")
 
 # 批量操作
-st.markdown("### 🛠️ 批量操作")
+st.markdown("### 🛠️ 系統功能")
 
 col1, col2, col3 = st.columns(3)
 
@@ -452,17 +469,23 @@ with col1:
 
 with col2:
     if st.button("🗑️ 清除所有記錄", use_container_width=True, type="secondary"):
-        for boss_name in tracker.bosses:
-            tracker.bosses[boss_name]['last_killed'] = None
-        if tracker.save_boss_data():
-            st.success("✅ 已清除所有BOSS記錄")
-            st.rerun()
+        # 二次確認
+        if st.session_state.get('confirm_clear_all', False):
+            for boss_name in tracker.bosses:
+                tracker.bosses[boss_name]['last_killed'] = None
+            if tracker.save_boss_data():
+                st.success("✅ 已清除所有BOSS記錄")
+                st.session_state.confirm_clear_all = False
+                st.rerun()
+        else:
+            st.session_state.confirm_clear_all = True
+            st.warning("⚠️ 請再次點擊確認清除所有記錄")
 
 with col3:
     # 下載數據備份
     backup_data = json.dumps(tracker.bosses, ensure_ascii=False, indent=2)
     st.download_button(
-        "💾 下載數據備份",
+        "💾 下載備份",
         backup_data,
         file_name=f"boss_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
         mime="application/json",
@@ -473,18 +496,8 @@ with col3:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; margin: 2rem 0;'>
-    <p>🎮 天堂2M BOSS重生追蹤器 - Web版</p>
+    <p>🎮 天堂2M BOSS重生追蹤器 - Web版 (修正版)</p>
     <p>📱 支援手機、平板、電腦 | 🌐 多人共享數據 | ⚡ 即時更新</p>
-    <small>所有用戶共享同一份BOSS數據，任何人的更新都會影響所有用戶的顯示</small>
+    <small>✅ 修正點擊問題 ✅ 修正顏色對比 ✅ 優化操作體驗</small>
 </div>
-""", unsafe_allow_html=True)
-
-# 自動刷新腳本
-st.markdown("""
-<script>
-    // 每30秒自動刷新頁面
-    setTimeout(function(){
-        window.location.reload();
-    }, 30000);
-</script>
 """, unsafe_allow_html=True)
